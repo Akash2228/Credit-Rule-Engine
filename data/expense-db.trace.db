@@ -1,0 +1,3 @@
+2026-04-17 17:17:31.604272+05:30 jdbc[13]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "CONDITION" not found; SQL statement:
+Update CONDITION = "foir<=5" where RULE_ID=7 [42102-240]
