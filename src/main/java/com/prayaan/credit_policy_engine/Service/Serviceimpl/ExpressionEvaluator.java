@@ -115,7 +115,7 @@ public class ExpressionEvaluator {
     private String mapToSpelPath(String fieldName) {
         return switch (fieldName.toLowerCase()) {
             case "credit_score" -> "#applicant.creditScore";
-            case "age_at_loan_maturity" -> "#applicant.age";
+            case "age" -> "#applicant.age";
             case "monthly_income" -> "#applicant.monthlyIncome";
             case "existing_emi_obligations" -> "#applicant.existingEmiObligations";
             case "city_tier" -> "#applicant.cityTier";

@@ -15,16 +15,15 @@ import java.util.Map;
 public class GeminiService {
 
     private static final String GEMINI_API_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
-
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final tools.jackson.databind.ObjectMapper objectMapper = new tools.jackson.databind.ObjectMapper();
 
 
-    public Map<String, String> parseRuleExpression(String ruleExpression) {
+    public List<Map<String, String>> parseBulkRuleExpressions(List<String> ruleExpressions) {
         try {
-            String prompt = buildPromptForExpression(ruleExpression);
+            String prompt = buildBulkPrompt(ruleExpressions);
 
             Map<String, Object> part = Map.of("text", prompt);
             Map<String, Object> content = Map.of("parts", List.of(part));
@@ -38,22 +37,17 @@ public class GeminiService {
             HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
             String fullUrl = GEMINI_API_URL + "?key=" + API_KEY;
 
-            System.out.println("Gemini Request: " + requestBody);
+            System.out.println("Gemini Bulk Request: " + requestBody);
 
             String llmResponse = restTemplate.postForObject(fullUrl, entity, String.class);
 
             System.out.println("Gemini Raw Response: " + llmResponse);
 
-            JsonNode rootNode;
-            try {
-                rootNode = objectMapper.readTree(llmResponse);
-            } catch (Exception e) {
-                throw new RuntimeException("Invalid JSON from Gemini: " + llmResponse, e);
-            }
+            JsonNode rootNode = objectMapper.readTree(llmResponse);
 
             JsonNode candidates = rootNode.path("candidates");
             if (!candidates.isArray() || candidates.isEmpty()) {
-                throw new RuntimeException("No candidates in Gemini response: " + llmResponse);
+                throw new RuntimeException("No candidates in Gemini response");
             }
 
             JsonNode parts = candidates.get(0)
@@ -61,36 +55,31 @@ public class GeminiService {
                     .path("parts");
 
             if (!parts.isArray() || parts.isEmpty()) {
-                throw new RuntimeException("No parts in Gemini response: " + llmResponse);
+                throw new RuntimeException("No parts in Gemini response");
             }
 
             String extractedJsonText = parts.get(0).path("text").asText();
 
-            System.out.println("🧠 Extracted Raw Text: " + extractedJsonText);
+            System.out.println("Extracted Raw Text: " + extractedJsonText);
 
             extractedJsonText = extractedJsonText
                     .replace("```json", "")
                     .replace("```", "")
                     .trim();
 
-            System.out.println("🧠 Clean JSON Text: " + extractedJsonText);
-            try {
-                return objectMapper.readValue(
-                        extractedJsonText,
-                        new TypeReference<Map<String, String>>() {}
-                );
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to parse extracted JSON: " + extractedJsonText, e);
-            }
+            System.out.println("Clean JSON Text: " + extractedJsonText);
+
+            return objectMapper.readValue(
+                    extractedJsonText,
+                    new TypeReference<List<Map<String, String>>>() {}
+            );
 
         } catch (Exception e) {
-            System.err.println("Gemini parsing failed for: " + ruleExpression);
-            e.printStackTrace();
-            throw new RuntimeException("Gemini API parsing failed for expression: " + ruleExpression, e);
+            throw new RuntimeException("Gemini BULK parsing failed", e);
         }
     }
 
-    private String buildPromptForExpression(String ruleExpression) {
+    private String buildBulkPrompt(List<String> ruleExpressions) {
 
         String jsonStructureExample = """
     {
@@ -101,20 +90,31 @@ public class GeminiService {
     }
     """;
 
+        StringBuilder rulesText = new StringBuilder();
+        for (int i = 0; i < ruleExpressions.size(); i++) {
+            rulesText.append(i + 1)
+                    .append(". ")
+                    .append(ruleExpressions.get(i))
+                    .append("\n");
+        }
+
         return "You are a rule-parsing expert.\n" +
-                "Convert the given credit policy rule into structured JSON.\n\n" +
+                "Convert ALL the following credit policy rules into a JSON ARRAY.\n\n" +
 
                 "IMPORTANT RULES:\n" +
-                "1. The MAIN validation must go into 'field', 'operator', 'threshold'\n" +
-                "2. The CONDITION (when rule applies) must go into 'condition'\n" +
-                "3. CONDITION should NOT repeat the main rule\n" +
-                "4. If no condition exists, set condition = null\n\n" +
+                "1. Each rule must be converted into JSON object\n" +
+                "2. MAIN validation → field, operator, threshold\n" +
+                "3. CONDITION → when rule applies\n" +
+                "4. Do NOT repeat main rule inside condition\n" +
+                "5. If no condition exists → condition = null\n\n" +
 
-                "Example:\n" +
-                "Input: 'Applicants with loan amount > 250000 must have credit score >= 700'\n" +
-                "Output: " + jsonStructureExample + "\n\n" +
+                "Example Output Object:\n" +
+                jsonStructureExample + "\n\n" +
 
-                "Rule Expression: '" + ruleExpression + "'\n" +
-                "Return ONLY JSON. No explanation.";
+                "Rules:\n" +
+                rulesText +
+
+                "\nReturn ONLY JSON ARRAY like:\n" +
+                "[{...},{...}]";
     }
 }

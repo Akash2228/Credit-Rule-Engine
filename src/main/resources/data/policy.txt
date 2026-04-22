@@ -1,4 +1,4 @@
-Rule R-05 [HIGH]: Applicants with loan amount > 2,40,000 must have a credit score of at least 700.
+Rule R-01 [HIGH]: Applicants with loan amount > 2,00,000 must have a credit score of at least 700.
 Rule R-07 [MEDIUM]: Fixed Obligation to Income Ratio (FOIR) must not exceed 50%.
 Rule R-11 [HIGH]: Applicant age must be between 21 and 60 years at loan maturity.
 Rule R-15 [LOW]: Salaried applicants in Tier-1 cities receive a 0.25% rate benefit.

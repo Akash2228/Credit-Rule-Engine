@@ -1,5 +1,6 @@
 package com.prayaan.credit_policy_engine.Service.Serviceimpl;
 
+import com.prayaan.credit_policy_engine.Dto.RawRule;
 import com.prayaan.credit_policy_engine.Entity.Rule;
 import com.prayaan.credit_policy_engine.Service.llm.GeminiService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,28 +20,59 @@ public class PolicyParser {
 
 
     public List<Rule> parsePolicy() {
-        List<Rule> rules = new ArrayList<>();
+        List<RawRule> rawRules = new ArrayList<>();
+
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(
                         getClass().getResourceAsStream("/data/policy.txt")))) {
+
             String line;
             while ((line = reader.readLine()) != null) {
                 if (line.trim().isEmpty()) continue;
-                try {
-                    Rule rule = parseLine(line);
-                    rules.add(rule);
-                } catch (Exception e) {
-                    System.err.println("Failed to parse rule: '" + line + "'. Error: " + e.getMessage());
-                }
+
+                rawRules.add(extractRawRule(line));
             }
+
         } catch (Exception e) {
             throw new RuntimeException("Error reading policy file", e);
         }
+
+        List<Map<String, String>> parsedList =
+                geminiService.parseBulkRuleExpressions(
+                        rawRules.stream()
+                                .map(r -> r.ruleExpression)
+                                .toList()
+                );
+
+        List<Rule> rules = new ArrayList<>();
+
+        for (int i = 0; i < rawRules.size(); i++) {
+            RawRule raw = rawRules.get(i);
+            Map<String, String> parsed = parsedList.get(i);
+
+            if (parsed == null || parsed.get("field") == null || parsed.get("operator") == null) {
+                System.err.println("Failed parsing: " + raw.ruleText);
+                continue;
+            }
+
+            parsed = normalizeRule(parsed, raw.ruleText);
+
+            rules.add(Rule.builder()
+                    .ruleId(raw.ruleId)
+                    .severity(raw.severity)
+                    .ruleText(raw.ruleText)
+                    .field(parsed.get("field"))
+                    .operator(parsed.get("operator"))
+                    .threshold(parsed.get("threshold"))
+                    .condition(parsed.get("condition"))
+                    .isActive(true)
+                    .build());
+        }
+
         return rules;
     }
 
-    private Rule parseLine(String line) {
-
+    private RawRule extractRawRule(String line) {
         int ruleIdStart = line.indexOf("R-") + 2;
         int ruleIdEnd = line.indexOf("[");
         Integer ruleId = Integer.valueOf(line.substring(ruleIdStart, ruleIdEnd).trim());
@@ -54,24 +86,7 @@ public class PolicyParser {
                 .replace(",", "")
                 .trim();
 
-        Map<String, String> parsed = geminiService.parseRuleExpression(ruleExpression);
-
-        if (parsed == null || parsed.get("field") == null || parsed.get("operator") == null) {
-            throw new RuntimeException("Invalid rule parsed from Gemini: " + ruleExpression);
-        }
-
-        parsed = normalizeRule(parsed,line);
-
-        return Rule.builder()
-                .ruleId(ruleId)
-                .severity(severity)
-                .ruleText(line)
-                .field(parsed.get("field"))
-                .operator(parsed.get("operator"))
-                .threshold(parsed.get("threshold"))
-                .condition(parsed.get("condition"))
-                .isActive(true)
-                .build();
+        return new RawRule(ruleId, severity, line, ruleExpression);
     }
 
     private Map<String, String> normalizeRule(Map<String, String> parsed, String ruleText) {
